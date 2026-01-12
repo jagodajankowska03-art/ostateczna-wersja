@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trasy Kierowców</title>
+</head>
+<body>
+    <h2>Wpisz adresy</h2>
+    <form method="POST">
+        <div id="adresy">
+            <input type="text" name="adres" placeholder="Adres 1" required><br>
+        </div>
+        <button type="button" onclick="dodajAdres()">Dodaj kolejny adres</button>
+        <button type="submit">Generuj trasy</button>
+    </form>
+    <div>
+        {% if map_html %}
+            {{ map_html|safe }}
+        {% endif %}
+    </div>
+    <script>
+        function dodajAdres() {
+            const div = document.getElementById("adresy");
+            const input = document.createElement("input");
+            input.type = "text";
+            input.name = "adres";
+            input.placeholder = "Adres";
+            input.required = true;
+            div.appendChild(document.createElement("br"));
+            div.appendChild(input);
+        }
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
