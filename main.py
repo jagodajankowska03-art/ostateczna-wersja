@@ -1,61 +1,71 @@
-from flask import Flask, render_template, request
+from flask import Flask, request
 import folium
 import requests
-import json
-app = Flask(__name__, template_folder='.')
-CACHE_FILE = 'cache.json'
-# Wczytanie cache współrzędnych
-try:
-    with open(CACHE_FILE, 'r') as f:
-        cache = json.load(f)
-except:
-    cache = {}
-def geocode(adres):
-    if adres in cache:
-        return cache[adres]
-    url = f"https://nominatim.openstreetmap.org/search?q={adres}&format=json"
-    try:
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        r = response.json()
-    except (ValueError, requests.exceptions.RequestException):
-        r = []
-    if r:
-        lat = float(r[0]['lat'])
-        lon = float(r[0]['lon'])
-        cache[adres] = (lat, lon)
-        with open(CACHE_FILE, 'w') as f:
-            json.dump(cache, f)
-        return lat, lon
-    return None, None
-@app.route("/", methods=['GET', 'POST'])
+import math
+app = Flask(__name__)
+def geocode(address):
+    url = "https://nominatim.openstreetmap.org/search"
+    params = {"q": address, "format": "json"}
+    headers = {"User-Agent": "debiut-kierowcy"}
+    r = requests.get(url, params=params, headers=headers, timeout=5)
+    data = r.json()
+    if not data:
+        return None
+    return float(data[0]["lat"]), float(data[0]["lon"])
+def distance(a, b):
+    return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
+def optimize(points):
+    route = [points.pop(0)]
+    while points:
+        last = route[-1]
+        next_point = min(points, key=lambda p: distance(last[1:], p[1:]))
+        route.append(next_point)
+        points.remove(next_point)
+    return route
+@app.route("/", methods=["GET", "POST"])
 def index():
-    map_html = None
-    if request.method == 'POST':
-        addresses = request.form.getlist('adres')
-        coords = []
-        for a in addresses:
-            lat, lon = geocode(a)
-            if lat is not None and lon is not None:
-                coords.append((a, lat, lon))
-        if coords:
-            m = folium.Map(location=[coords[0][1], coords[0][2]], zoom_start=12)
-            colors = ['red', 'blue', 'green']
-            driver_coords = [[], [], []]
-            for i, point in enumerate(coords):
-                driver_coords[i % 3].append(point)
-            for idx, driver in enumerate(driver_coords):
-                color = colors[idx]
-                for adres, lat, lon in driver:
-                    folium.Marker([lat, lon], popup=f"Kierowca {idx+1}: {adres}",
-                                  icon=folium.Icon(color=color)).add_to(m)
-                if len(driver) >= 2:
-                    folium.PolyLine([(lat, lon) for _, lat, lon in driver],
-                                    color=color, weight=4, opacity=0.7).add_to(m)
-            map_html = m._repr_html_()
-    return render_template('index.html', map_html=map_html)
+    html = """
+    <form method="POST">
+        <textarea name="addresses" rows="10" cols="60"
+        placeholder="Każdy adres w nowej linii"></textarea><br>
+        <button type="submit">Generuj trasy</button>
+    </form>
+    """
+    if request.method == "POST":
+        raw = request.form["addresses"].splitlines()
+        points = []
+        for a in raw:
+            geo = geocode(a)
+            if geo:
+                points.append((a, geo[0], geo[1]))
+        if len(points) < 2:
+            return html + "<p>Za mało poprawnych adresów</p>"
+        drivers = [[], [], []]
+        for i, p in enumerate(points):
+            drivers[i % 3].append(p)
+        m = folium.Map(location=[points[0][1], points[0][2]], zoom_start=11)
+        colors = ["red", "blue", "green"]
+        for i, driver in enumerate(drivers):
+            if len(driver) < 2:
+                continue
+            route = optimize(driver.copy())
+            folium.PolyLine(
+                [(p[1], p[2]) for p in route],
+                color=colors[i],
+                weight=5
+            ).add_to(m)
+            for p in route:
+                folium.Marker([p[1], p[2]],
+                    popup=f"Kierowca {i+1}<br>{p[0]}",
+                    icon=folium.Icon(color=colors[i])
+                ).add_to(m)
+        html += m._repr_html_()
+    return html
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
+
+
+
 
 
 
